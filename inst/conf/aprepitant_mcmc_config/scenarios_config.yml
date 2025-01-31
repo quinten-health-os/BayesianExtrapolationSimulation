@@ -1,0 +1,20 @@
+n_replicates: 1000
+ndrift: 20
+denominator_change_factor:
+    - 1
+sample_size_factors:
+    - 2
+    - 4
+target_to_source_std_ratio_range:
+    - 1
+parallelization: False
+case_studies:
+    - aprepitant
+methods:
+    - RMP
+    - separate
+    - pooling
+    - conditional_power_prior
+    - test_then_pool_equivalence
+    - test_then_pool_difference
+    - p_value_based_PP

@@ -1,0 +1,3 @@
+frequentist_ocs_results_filename: results_frequentist.csv
+bayesian_ocs_mc_results_filename: results_bayesian_mc.csv
+bayesian_ocs_deterministic_results_filename: results_bayesian_simpson.csv 

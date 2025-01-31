@@ -1,0 +1,163 @@
+---
+title: "Normalized Power Prior : normal likelihood, beta prior on the power parameter, noninformative initial prior, known sampling variance"
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: true
+vignette: >
+  %\VignetteIndexEntry{Introduction to MyPackage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+
+## Introduction
+
+The aim of this document is to illustrate the  implementation of the Normalized Power Prior in the case where the treatment effect follows a normal distribution. 
+
+The derivation for the normalized power prior can be found in [Pawel et al (2023)](https://doi.org/10.1002/sta4.591)
+ 
+With known standard error $\sigma_T$ of the estimate $\theta_T$, a Beta prior on the power parameter $\gamma \sim \operatorname{Be}(p, q)$. This choice leads to the normalized power prior : 
+
+$$
+\pi\left(\theta, \gamma \mid D_S\right)=\frac{\mathcal{L}\left(D_S \mid \theta\right)^\gamma \pi(\gamma)}{\int_{-\infty}^{+\infty} \mathcal{L}\left(D_S \mid \theta^{\prime}\right)^\gamma d \theta^{\prime}}=\mathcal{N}\left(\theta \mid \hat{\theta}_S, \sigma_S^2 / \gamma\right) \operatorname{Be}(\gamma \mid p, q)
+$$
+
+Combining this prior with the likelihood of the target study data produces a joint posterior for $\theta$ and $\gamma$, that is,
+$$
+\pi\left(\theta, \gamma \mid D_T, D_S\right)=\frac{L(D_T \mid \theta) \pi\left(\theta, \gamma \mid D_S\right)}{\int_0^1 \int_{-\infty}^{\infty} L\left(D_T \mid \theta^{\prime}\right) \pi\left(\theta^{\prime}, \gamma^{\prime} \mid D_S\right) d \theta^{\prime} d \gamma^{\prime}}=\frac{\mathcal{N}\left(\hat{\theta}_T \mid \theta, \sigma_T^2\right) \mathcal{N}\left(\theta \mid \hat{\theta}_S, \sigma_S^2 / \gamma\right) \operatorname{Be}(\gamma \mid p, q)}{\int_0^1 \mathcal{N}\left(\hat{\theta}_T \mid \hat{\theta}_S, \sigma_T^2+\sigma_S^2 / \gamma^{\prime}\right) \operatorname{Be}\left(\gamma^{\prime} \mid p, q\right) d \gamma^{\prime}},
+$$
+from which a marginal posterior for $\gamma$ can be obtained by integrating out $\theta$, that is,
+$$
+\pi\left(\gamma \mid D_T, D_S\right)=\int_{-\infty}^{+\infty} \pi\left(\theta, \gamma \mid D_T, D_S\right) d \theta=\frac{\mathcal{N}\left(\hat{\theta}_T \mid \hat{\theta}_S, \sigma_T^2+\sigma_S^2 / \gamma\right) \operatorname{Be}(\gamma \mid p, q)}{\int_0^1 \mathcal{N}\left(\hat{\theta}_T \mid \hat{\theta}_S, \sigma_T^2+\sigma_S^2 / \gamma^{\prime}\right) \operatorname{Be}\left(\gamma^{\prime} \mid p, q\right) d \gamma^{\prime}} .
+$$
+
+## Set working directory, import functions
+
+```{r, setwd, include=FALSE}
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(RBExT)
+library(ggplot2)
+```
+
+## Load the Belimumab case study configuration
+
+Load the simulation configuration and the Belimumab case study configuration from YAML files.
+```{r load_config}
+set.seed(42)
+case_study_config <- yaml::yaml.load_file(system.file("conf/case_studies/belimumab.yml", package = "RBExT"))
+```
+
+### Create data objects
+
+Create a source_data instance, where information about the source data is stored
+
+ 
+```{r}
+source_data <- ObservedSourceData$new(case_study_config)
+```
+
+Set the observed target data (in the paediatrics population)
+```{r}
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$target$treatment_effect, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+```
+
+## Create the model
+
+Now, we define the model we want to use for inferring the treatment effect in the target study.  
+
+We reuse the code published in [Pawel et al (2023)](https://doi.org/10.1002/sta4.591). Marginal posterior densities are computed by numerical integration:
+
+```{r}
+method <- "NPP"
+# here, we choose the parameters so that the prior on the power parameter is Beta(1,1)
+method_parameters <- list(
+  initial_prior = "noninformative",
+  power_parameter_mean = 0.5,
+  power_parameter_std = sqrt(1 / 12)
+)
+
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+   
+### Inference
+
+ 
+
+```{r}
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+```
+
+
+```{r}
+model$plot_pdfs(xmin = 0, xmax = 1, resolution = 100)
+```
+
+Posterior distribution of the power parameter:
+```{r}
+model$plot_power_parameter_posterior_pdf(target_data)
+```
+## Power parameter as a function of drift
+```{r}
+target_treatment_effect_values <- seq(-3, 3, length.out = 100)
+
+drift <- target_treatment_effect_values - source_data$treatment_effect_estimate
+
+posterior_power_parameter_means <- numeric(100)
+posterior_power_parameter_std <- numeric(100)
+
+for (i in 1:length(target_treatment_effect_values)) {
+  target_data$sample$treatment_effect_estimate <- target_treatment_effect_values[i]
+  model$inference(target_data)
+  posterior_power_parameter_means[i] <- model$posterior_parameters$power_parameter_mean
+  posterior_power_parameter_std[i] <- model$posterior_parameters$power_parameter_std
+}
+```
+
+```{r}
+# Combine into a data frame
+plot_data <- data.frame(
+  drift = drift,
+  target_treatment_effect = target_treatment_effect_values,
+  power_parameter_mean = posterior_power_parameter_means,
+  power_parameter_std = posterior_power_parameter_std
+)
+ 
+ggplot(plot_data, aes(x = drift, y = power_parameter_mean)) +
+  geom_point() +
+  # geom_vline(xintercept = source_data$treatment_effect_estimate, linetype = "dashed", color = "red", linewidth = 1, show.legend = TRUE) +
+  # geom_point(aes(x = source_data$treatment_effect_estimate, y = Inf, color = "Source Treatment Effect"), shape = "|", size = 5) +
+  # scale_color_manual(name = "", values = c("Source Treatment Effect" = "red")) +
+  labs(
+    title = "Posterior Mean of the Power Parameter PDF vs Drift",
+    x = "Drift",
+    y = "Power Parameter Mean"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(plot_data, aes(x = drift, y = power_parameter_std)) +
+  geom_point() +
+  labs(
+    title = "Posterior STD of the Power Parameter PDF vs Drift",
+    x = "Drift",
+    y = "Power Parameter STD"
+  ) +
+  theme_minimal()
+```

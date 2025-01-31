@@ -1,0 +1,206 @@
+url: 'https://quinten-health-os.github.io/BayesianExtrapolationSimulation/'
+template:
+  bootstrap: 5
+
+# See https://pkgdown.r-lib.org/reference/build_articles.html
+articles:
+- title: Simulation
+  desc: Vignettes describing simulation-based estimation of OCs
+  contents:
+  - simulation/simulation_illustration_high_level
+  - simulation/simulation_illustration_low_level
+  - simulation/Precision_based_ESS
+
+- title: Data generation
+  desc: Data generation in simulation studies
+  contents:
+  - data_generation/Data_generation_botox
+  - data_generation/Data_generation_belimumab
+  - data_generation/Data_generation_mepolizumab
+  - data_generation/Data_generation_teriflunomide
+  - data_generation/Data_generation_aprepitant
+
+- title: Methods
+  desc: Borrowing methods
+  contents:
+  - methods/Commensurate_Power_Prior
+  - methods/Conditional_Power_Prior
+  - methods/conditional_power_prior_binary
+  - methods/Empirical_Bayes_Power_Prior
+  - methods/Gaussian_RMP
+  - methods/NPP
+  - methods/Truncated_Gaussian_RMP
+  - methods/PDCCPP
+  - methods/Pooling
+  - methods/Pooling_study
+  - methods/Separate
+  - methods/Test_then_pool
+
+- title: Replications
+  desc: Replication of published analyses
+  contents:
+  - replications/Belimumab_replication
+  - replications/Mepolizumab_replication
+
+
+# See https://pkgdown.r-lib.org/reference/build_reference
+reference:
+- title: Data generation
+- contents:
+  - generate_binary_data_from_rate
+  - sample_aggregate_binary_data
+  - sample_aggregate_normal_data
+  - sample_log_odds_ratios
+  - sample_rate_ratios
+  - compute_ORs
+  - compute_log_odds_ratio_from_counts
+  - compute_log_odds_ratio_from_rates
+  - rate_from_drift_logOR
+  - rate_from_drift_logRR
+  - standard_error_log_odds_ratio
+
+- title: Methods
+- contents:
+  - BinomialPooling
+  - TruncatedGaussianRMP
+  - BinomialSeparate
+  - ConjugateGaussian
+  - PDCCPP
+  - PoolGaussian
+  - RecurrentEventTargetData
+  - SeparateGaussian
+  - StaticBorrowingGaussian
+  - TestThenPool
+  - TestThenPoolDifference
+  - TestThenPoolEquivalence
+  - GaussianRMP
+  - Gaussian_empirical_Bayes_PP
+  - Gaussian_Gravestock_EBPP
+  - Gaussian_NPP
+  - BinomialCPP
+  - GaussianCommensuratePowerPrior
+  - GaussianElasticPriorLogistic
+  - GaussianElasticPriorStep
+  - GaussianRMP_RBesT
+  - Model_RBesT
+  - PoolGaussian_RBesT
+  - SeparateGaussian_RBesT
+  - MCMCModel
+  - Model
+  - p_value_based_PP_Binomial
+  - p_value_based_PP_Gaussian
+
+- title: Plots
+- contents:
+  - plot_metric_vs_scenario
+  - forest_plot
+  - format_uncertainty
+  - estimate_bayesian_ocs
+  - set_size
+  - bayesian_metric_vs_parameters
+  - bayesian_metric_vs_sample_size
+  - bayesian_ocs_plots
+  - frequentist_power_at_equivalent_tie
+  - plot_metric_vs_drift
+  - plot_metric_vs_parameters
+  - plot_metric_vs_sample_size
+  - power_vs_tie
+  - posterior_parameters_plots
+  - power_vs_tie_plots
+  - forest_plot_methods_comparison
+  - forest_plot_bayesian
+  - forest_plot_methods_comparison_bayesian
+  - plot_metrics_vs_ess
+  - plot_posterior_parameters_vs_drift
+  - plot_success_proba_vs_drift
+  - plot_success_proba_vs_scenario
+  - plot_empirical_bayes_hyperparameters_vs_drift
+  - empirical_bayes_parameters_plots
+  - bayesian_operating_characteristics_vs_tie_plots
+  - forest_plot_sweet_spot
+  - forest_plot_sweet_spots_comparison
+  - operating_characteristics_vs_tie_plots
+  - operating_characteristic_vs_tie
+  - plot_metric_vs_drift_methods
+  - plot_sweet_spot_width_vs_scenario
+  - plot_metric_vs_sample_size_methods
+  - plot_metric_vs_scenario_methods
+
+- title: Operating characteristics
+- contents:
+  - average_power
+  - average_tie
+  - sweet_spot
+  - sweet_spot_determination
+  - upper_bound_proba_FP_MC
+  - compute_freq_power
+  - preposterior_proba_FP_MC
+  - preposterior_proba_TP_MC
+  - prior_moment_ess
+  - prior_precision_ess
+  - gaussian_mix_moment_ess
+  - gaussian_mix_precision_ess
+  - compute_freq_power_pooling
+  - prior_ess_elir
+
+- title: Simulation
+- contents:
+  - compute_control_drift_range
+  - compute_drift_range
+  - compute_source_denominator_range
+  - frequentist_ocs_scenario_simulation
+  - bayesian_ocs_scenario_simulation
+  - simulation_analysis
+  - simulation_bayesian_ocs
+  - simulation_frequentist_ocs
+  - simulation_scenarios
+
+- title: Tables
+- contents:
+  - table_methods_comparison
+  - posterior_parameters_tables
+  - power_vs_tie_tables
+  - table_power_vs_tie
+  - table_bayesian_ocs
+  - table_metric_vs_drift
+  - table_metric_vs_parameters
+  - table_metric_vs_sample_size
+  - table_posterior_parameters_vs_drift
+  - tables_metric_vs_scenario
+  - table_empirical_bayes_hyperparameters_vs_drift
+  - table_empirical_bayes_hyperparameters_vs_scenario
+  - table_bayesian_metrics
+
+- title: Data
+- contents:
+  - TargetData
+  - TargetDataFactory
+  - SourceData
+  - BinaryTargetData
+  - ObservedSourceData
+  - ObservedTargetData
+  - ContinuousTargetData
+  - TimeToEventTargetData
+
+- title: Design priors
+- contents:
+  - DesignPrior
+  - AnalysisPriorDesignPrior
+  - SourcePosteriorDesignPrior
+  - UnitInformationDesignPrior
+
+- title: Utilities
+- contents:
+  - check_colnames
+  - combine_parameters
+  - convert_params_to_str
+  - hellinger_distance
+  - important_drift_values
+  - make_labels_from_parameters
+  - markers
+  - negative_binomial_regression
+  - findCalibrationParameter
+  - get_parameters
+  - remove_columns_from_df
+  - concatenate_simulation_logs
+  - generate_comparison_table

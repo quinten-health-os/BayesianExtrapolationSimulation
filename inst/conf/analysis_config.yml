@@ -1,0 +1,3 @@
+frequentist_test : 't-test'
+nominal_tie : 0.025
+parallelization: True

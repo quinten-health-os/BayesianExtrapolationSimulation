@@ -1,0 +1,24 @@
+n_replicates: 10000
+ndrift: 0
+denominator_change_factor:
+    - 1
+sample_size_factors:
+    -4
+target_to_source_std_ratio_range:
+    - 1
+parallelization: True
+case_studies:
+    - belimumab
+    - botox
+    - dapagliflozin
+    - mepolizumab
+    - teriflunomide
+methods:
+    - RMP
+    - separate
+    - pooling
+    - conditional_power_prior
+    - test_then_pool_equivalence
+    - test_then_pool_difference
+    - p_value_based_PP
+    - EB_PP

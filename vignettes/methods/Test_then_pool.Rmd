@@ -1,0 +1,264 @@
+---
+title: "Test-then-pool"
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: yes  
+  pdf_document:
+    toc: yes
+vignette: >
+  %\VignetteIndexEntry{Test-then-pool}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+
+
+## Introduction
+
+This vignette describes an implementation of the Test-then-Pool method.
+  
+## Set working directory and load packages
+
+```{r setup, warning=F, message=F, include = FALSE}
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(RBExT)
+library(ggplot2)
+```
+
+## Load the case study configuration
+
+Load the simulation configuration and the Belimumab case study configuration from YAML files.
+
+```{r load_config}
+set.seed(42)
+case_study_config <- yaml::yaml.load_file(system.file("conf/case_studies/belimumab.yml", package = "RBExT"))
+```
+
+### Create data objects
+
+Create a source_data instance, where information about the source data is stored
+
+ 
+```{r}
+source_data <- ObservedSourceData$new(case_study_config)
+```
+
+Set the observed target data:
+```{r}
+drift <- 0
+
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+```
+## Test-then-pool with a difference test
+
+The hypothesis $H_0 : \theta_T = \theta_S$ is tested, where $\theta_T$ and $\theta_S$ denote the treatment effect for the target study and the source study, respectively. If $H_0$ is rejected, this indicates that the data should not be pooled, and should be analyzed independently. So the source data are either fully borrowed or not borrowed at all, depending on the test result.
+ 
+ 
+```{r}
+method <- "test_then_pool_difference"
+method_parameters <- list(
+  initial_prior = "noninformative",
+  significance_level = 0.2
+)
+``` 
+Now, we define the model we want to use for inferring the treatment effect in the target study.  
+
+```{r}
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+
+```{r}
+model$plot_test_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -1, max_drift = 1, resolution = 100)
+```
+```{r}
+model$plot_test_pvalue_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -1, max_drift = 1, resolution = 100)
+```
+
+### Inference
+
+
+ 
+```{r}
+drift <- 0
+
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = 0, xmax = 1, resolution = 100)
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+print(plt)
+```
+Now, if the drift is larger:
+
+```{r}
+drift <- 1
+
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = 0, xmax = 2, resolution = 100)
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+
+print(plt)
+```
+### Implementation
+
+The test is implemented as : 
+  
+```{r}
+read_function_code(model$test)
+```
+
+## Test-then-pool with an equivalence test
+
+Testing an equivalence hypothesis instead, with: $H_0 : | \theta_S - \theta_T | > \lambda$ versus $H_1 : | \theta_S - \theta_T | < \lambda$, where $\lambda > 0$ represents a predetermined equivalence margin. They compute the \textit{p}-value as the maximum of the \textit{p}-values for testing two one-sided hypotheses: $H_{0a} : \theta_S - \theta_T > \lambda$ and $H_{0b} : \theta_S - \theta_T < - \lambda$ ([Schuirmann et al (1987)](http://link.springer.com/10.1007/BF01068419)). Under this approach, a significant p-value implies the rejection of the null hypothesis of non-equivalence. Thus, data was pooled if the p-value was less than a pre-specified level.
+
+ 
+```{r}
+method <- "test_then_pool_equivalence"
+method_parameters <- list(
+  initial_prior = "noninformative",
+  significance_level = 0.3,
+  equivalence_margin = 0.5
+)
+``` 
+Now, we define the model we want to use for inferring the treatment effect in the target study.  
+
+```{r}
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+
+```{r}
+plt <- model$plot_test_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -1, max_drift = 2, resolution = 100)
+
+print(plt)
+```
+This shows the highly conservative nature of test-then-pool with an equivalence test. 
+
+```{r}
+model$plot_test_pvalue_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -1, max_drift = 1, resolution = 100)
+```
+
+### Inference
+
+
+```{r}
+drift <- 0
+
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = -2, xmax = 2, resolution = 100)
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+
+print(plt)
+```
+Without drift, the data are pooled.
+
+
+Now, if the drift is larger:
+
+```{r}
+drift <- 0.3
+
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = -2, xmax = 2, resolution = 100)
+
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+
+print(plt)
+```
+Without drift, the data are not pooled.
+
+### Implementation
+
+The test is implemented as: 
+  
+```{r}
+read_function_code(model$test)
+```

@@ -1,0 +1,20 @@
+name: Botox
+control: Placebo
+summary_measure_likelihood: normal  
+theta_0: 0
+endpoint: continuous
+null_space: left
+sampling_approximation: FALSE # Whether to sample the summary measure according to the approximation used in the analysis or not (that is, sample according to the true data generating process)
+target:
+  control: 130
+  treatment: 126
+  total: 256
+  treatment_effect: 0.10
+  standard_error: 0.10
+
+source:
+  control: 235
+  treatment: 233
+  total: 468
+  treatment_effect: 0.20
+  standard_error: 0.10

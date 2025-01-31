@@ -1,0 +1,20 @@
+name: Dapagliflozin # (5 mg) + Metformin
+control: Placebo + Metformin
+summary_measure_likelihood: normal   
+theta_0: 0
+endpoint: continuous
+null_space: left
+sampling_approximation: FALSE # Whether to sample the summary measure according to the approximation used in the analysis or not (that is, sample according to the true data generating process)
+target:
+  control: 76
+  treatment: 81 
+  total: 157
+  treatment_effect: 1.03
+  standard_error: 0.2755 # 95% CI: [0.49, 1.57] 
+
+source:
+  control: 134
+  treatment: 133
+  total: 267
+  treatment_effect: 0.36 # See Bailey et al (2013)
+  standard_error: 0.102 # 95% CI: [0.16, 0.56], sigma <- (ci_upper - mean) / z_value

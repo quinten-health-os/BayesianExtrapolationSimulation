@@ -1,0 +1,204 @@
+---
+title: "Precision-based matching for prior ESS estimation" 
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: true
+vignette: >
+  %\VignetteIndexEntry{Precision-based matching for prior ESS estimation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+
+```{r setup, warning=F, message=F, include=FALSE}
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(RBExT)
+library(ggplot2)
+library(RBesT)
+```   
+
+## Introduction 
+
+We compute the prior ESS as the difference between the effective sample size of the posterior distribution and the sample size of the target trial. The calculation of the effective sample size of the posterior distribution will, in turn, be calculated using the "moment-based" matching method described in the RBesT package as well as a “precision-based” matching method.
+
+
+## Understanding the concept of ESS: example of the one parameter normal-normal model
+### The one parameter normal-normal model
+
+Consider a normal prior on the parameter of interest, $\mu \sim \mathcal{N}(\mu_0, \sigma_0^2)$
+The likelihood is $p(\mathbf{D}|\mu, \sigma) = \prod_{i=1}^n\phi(x_i|\mu, \sigma^2)$, where $\sigma$ is known.
+The posterior after observing $n$ data points is $p(\mu | \mathbf{D}, \sigma) = \mathcal{N}(\mu_n, \sigma_n^2)$, with $\sigma^2_n = (n/\sigma^2 + 1/\sigma_0^2)^{-1}$, and:
+$\mu_n = n\frac{\sigma^2_n}{\sigma^2}\overline{x} + \frac{\sigma^2_n}{\sigma_0^2}\mu_0$.
+
+$\sigma$ is denoted as the "reference scale" in the RBesT package. Indeed, according to RBesT's documentation, "The reference scale $\sigma$ is the fixed standard deviation in the one-parameter normal-normal model (observation standard deviation). The function sigma can be used to query the reference scale and may also be used to assign a new reference scale, see examples below. In case the sigma is not specified, the user has to supply sigma as argument to functions which require a reference scale."
+
+So, if we start with a noninformative prior ($\sigma_0 \rightarrow + \infty$), $n$ is the effective sample size of the posterior distribution. 
+
+So, if we have some distribution $\mathcal{N}(\mu,\tau^2)$, by assuming that distribution corresponds to the posterior derived from an uninformative prior updated after observing $m$ data points sampled from a normal distribution with known standard deviation $\sigma$ (the reference scale), we have that : $\tau^2 = \sigma^2/m$.
+So, we have an ESS : $m = \frac{\sigma^2}{\tau^2}$.
+
+## Moments-based matching for ESS estimation
+
+Define a normal mixture and compute the distribution ESS using the moments-matching method:
+
+```{r}
+nm <- RBesT::mixnorm(rob = c(0.2, 0, 2), inf = c(0.8, 2, 2), sigma = 5)
+print(nm)
+
+summary(nm)
+RBesT::ess(nm, method = "moment")
+```
+
+The moment-based matching method used in RBesT is the following:
+1. Compute the moments of the distribution of interest
+2. Define a distribution from a family for which computing the ESS is trivial (such as normal, beta, or gamma) with the same moments
+3. Compute the corresponding ESS, which is an approximation to the ESS of the distribution of interest
+
+The corresponding code is the following : 
+
+```{r}
+read_function_code(gaussian_mix_moment_ess)
+```
+ 
+So, we recognize the ESS computation from the normal-normal model: $m = \frac{\sigma^2}{\tau^2}$, where $\sigma$ is the reference scale and $\tau$ is the standard deviation of the distribution of interest. 
+
+What should be the value of $\sigma$? 
+In our simulation study, when inferring the treatment effect from data, we assume that the sampling standard deviation $\sigma$ for the target study data is known and corresponds to the target study data sample standard deviation. 
+Therefore, we should set $\sigma = s_T$, where $s_T$ is the target study sample standard deviation.
+
+## Precision-based matching for ESS estimation
+
+The precision-based matching method, inspired from the moment-based matching method, is the following:
+1. Compute the mean of the distribution of interest, and the half-width of the 95% credible interval.
+2. Define a distribution from a family for which computing the ESS is trivial (such as normal, beta, or gamma) with the same precision. Note that this may not be sufficient to uniquely define a matching distribution (for example, in the Gaussian case, any translation of this distribution would have the same precision). Therefore, it may also be required to match the mean for matching distributions with two degrees of freedom (which is the case of the normal, beta, and gamma distributions).
+3. Compute the corresponding ESS, which is an approximation to the ESS of the distribution of interest
+
+### Cases in which the summary measure is assumed normally distributed
+In this case, it makes sense to match the posterior distribution of the treatment effect with a Gaussian distribution. 
+Consider that the variance of the posterior distribution over the treatment effect is $\tau^2$, and denote $\rho$ the precision.
+For a Gaussian with variance $\tau^2$, the precision is given by $\Phi^{-1}(1-\alpha/2)\tau$, with $\alpha= 0.05$.
+Therefore, if we match any distribution with a Gaussian with the same mean and precision, the matching distribution will have standard deviation $\tau = \frac{\rho}{\Phi^{-1}(1-\alpha/2)}$. 
+Therefore, we can simply reuse the moment-based matching code in RBesT by replacing the standard deviation of the matching distribution with $\tau = \frac{\rho}{\Phi^{-1}(1-\alpha/2)}$. 
+
+```{r}
+read_function_code(gaussian_mix_precision_ess)
+```
+
+
+```{r}
+gaussian_mix_precision_ess(nm)
+```
+
+## Cases in which the summary measure is not normally distributed (binary endpoint without normal approximation)
+
+In this case, the support of the distribution of the treatment effect is $[-1,1]$. There is no standard distribution with such a support. Therefore, we see the following possibilities:
+
+*  match the posterior distribution over the treatment effect with a Gaussian (similar to the above section). This method is suitable in cases where the posterior distribution is approximately Gaussian and the 95% high density interval of the matching gaussian is within the $[-1,1]$ range. This method is also much easier to implement.
+* match the posterior distribution over the treatment effect with a linearly transformed gamma or beta distribution. Consider that $X \sim Beta(a,b)$. Then $Y=2X−1$ follows a distribution with the same shape, but its support is $[-1,1]$. 
+
+
+However, there is no analytical formula for the precision in the case of a beta distribution or a gamma distribution. Therefore, we can match the precision and mean of the distribution of interest and the transformed gamma/beta by numerically solving a minimization problem (note that this is a 1D minimization problem, as we can easily match the mean). Moreover, it is not clear if the transformed beta/gamma will, in general, be a good approximation to the posterior distribution of the treatment effect.
+
+In this study, we will use the first approach, and match the treatment effect distribution with a Gaussian.
+ 
+## Application 
+
+We compute the posterior distribution of the treatment effect in the target study, for a case study : 
+```{r case_study}
+set.seed(42)
+config_path <- system.file("conf/full/simulation_config.yml", package = "RBExT")
+simulation_config <- yaml::yaml.load_file(config_path)
+
+config_path <- system.file("conf/case_studies/belimumab.yml", package = "RBExT")
+case_study_config <- yaml::yaml.load_file(config_path)
+
+
+method <- "RMP"
+method_parameters <- list(
+  initial_prior = "noninformative", # This corresponds to the fact that the posterior for the adults data is derived from an uninformative prior (for consistency with other methods). May be removed in future releases.
+  prior_weight = 0.5, # weight on the informative component of the mixture
+  empirical_bayes = FALSE
+)
+
+vague_prior_variance <- case_study_config$target$standard_error^2 * case_study_config$target$total
+# This is obtained by setting
+empirical_bayes <- TRUE
+
+source_data <- ObservedSourceData$new(case_study_config)
+
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$target$treatment_effect, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+model <- Model$new()
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+```
+
+We then convert the resulting model to RBesT format, compute the posterior ESS, and compute the prior ESS by subtracting the number of patients per arm:: 
+```{r}
+model$posterior_to_RBesT(target_data = target_data, simulation_config = simulation_config)
+rbest_model <- model$RBesT_posterior
+```
+
+```{r}
+read_function_code(prior_moment_ess)
+```
+ 
+```{r}
+read_function_code(prior_precision_ess)
+```
+
+## Converting models to RBesT format
+
+As can be seen in the above example, we convert our models to RBesT format. For Gaussian RMP, this is straighforward.
+In most cases, however, the posterior is not a Gaussian or a mixture of Gaussians. In this case, we sample from the distribution, then approximate it using a mixture of Gaussian distributions 
+To do so, we use the RBesT RBesT::automixfit function, which allows automatic fitting of mixtures of conjugate distributions to a sample using the EM algorithm.
+
+```{r}
+read_function_code(model$prior_to_RBesT)
+```
+
+```{r}
+read_function_code(model$posterior_to_RBesT)
+```
+
+Let us see how we can apply this to the Gaussian RMP, and determine whether this provides an accurate approximation (here it is simpler than in the general case as we now the number of components): 
+
+```{r}  
+n_samples <- 10000
+n_components <- 2
+aic_penalty_parameter <- 6 # Penalty parameter for AIC calculation (default 6)
+
+prior_samples <- model$sample_prior(n_samples) # Samples to be fitted by a mixture distribution
+prior_mixture_approximation <- RBesT::automixfit(prior_samples, Nc = n_components, k = aic_penalty_parameter, thresh = -Inf, verbose = FALSE, type = c("norm")) # The procedure stops if the difference of subsequent AIC values is smaller than this threshold (default -Inf).
+RBesT_prior <- prior_mixture_approximation
+
+posterior_samples <- model$sample_posterior(n_samples) # Samples to be fitted by a mixture
+posterior_mixture_approximation <- RBesT::automixfit(posterior_samples, Nc = n_components, k = aic_penalty_parameter, thresh = -Inf, verbose = FALSE, type = c("norm"))
+RBesT_posterior <- posterior_mixture_approximation
+
+print(RBesT_prior)
+
+print(RBesT_posterior)
+```
+Now, let's compare these approximate distributions to the true distributions:
+```{r} 
+model$posterior_to_RBesT(target_data, simulation_config)
+
+print(model$RBesT_prior)
+print(model$RBesT_posterior)
+```

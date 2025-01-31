@@ -1,0 +1,26 @@
+name: Belimumab
+control: Placebo
+summary_measure_likelihood: normal  
+theta_0: 0
+endpoint: binary
+null_space: left
+sampling_approximation: FALSE # Whether to sample the summary measure according to the approximation used in the analysis or not (that is, sample according to the true data generating process)
+target:
+    control: 39
+    treatment: 53
+    total: 92
+    responses:
+      control: 17 
+      treatment: 28 
+    treatment_effect: 0.371157794609103  
+    standard_error: 0.4242550654742921    
+
+source:
+    control: 562
+    treatment: 563
+    total: 1125
+    responses:
+      control: 218
+      treatment: 285  
+    treatment_effect: 0.48101466116232283
+    standard_error: 0.1208305712122211

@@ -1,0 +1,9 @@
+num_chains: 4
+parallel_chains: 4
+threads_per_chain: 4
+tune: 1000
+target_accept: 0.9
+chain_length: 5000
+max_chain_length: 10000
+target_ess: 10000
+rhat_threshold: 1.1

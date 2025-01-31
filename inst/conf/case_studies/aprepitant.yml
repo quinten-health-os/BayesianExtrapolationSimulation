@@ -1,0 +1,38 @@
+name: Aprepitant
+control: Ondansetron
+summary_measure_likelihood: binomial
+theta_0: 0
+endpoint: binary
+null_space: left
+sampling_approximation: FALSE
+
+target:
+    control: 52
+    treatment: 55
+    total: 107
+    responses:
+      control: 42
+      treatment: 48
+    treatment_effect: 0.06503496503496498 #difference in proportions: (48/55) - (42/52)
+    standard_error: 0.053555 # The standard error on the difference of two proportions is given by: SE(p1- p2)= sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2)
+# standard error :
+# pt <- sqrt(48/55)
+# pc <- sqrt(42/52)
+# nt <- 55
+# nc <- 52
+# SE <- sqrt(pt*(1-pt)/nt + pc*(1-pc)/nc)
+source:
+    control: 293
+    treatment: 280
+    total: 673
+    responses:
+      control: 154
+      treatment: 184
+    treatment_effect: 0.1315455875182837 #difference in proportions: (184/280) - (154/293)
+    standard_error: 0.03505291
+# standard error :
+# pt <- sqrt(184/280)
+# pc <- sqrt(154/293)
+# nt <- 280
+# nc <- 293
+# SE <- sqrt(pt*(1-pt)/nt + pc*(1-pc)/nc)

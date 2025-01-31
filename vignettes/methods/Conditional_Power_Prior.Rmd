@@ -1,0 +1,138 @@
+---
+title: "Conditional Power Prior"
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: yes  
+  pdf_document:
+    toc: yes
+vignette: >
+  %\VignetteIndexEntry{Conditional Power Prior}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+
+  
+
+# Posterior distribution 
+
+With pooling, the prior distribution of $\theta_T$ is given by:
+
+\[ p(\theta_T) = \mathcal{N}(\theta_T | \hat{\theta}_S, \sigma^2_S/N_S) \]
+
+We observe \(N_T\) data points with sample mean \(\hat{\theta}_T\) and known variance \(\sigma^2_T\). This implies the likelihood is given by:
+
+\[ p(\hat{\theta}_T | \theta_T) = \mathcal{N}(\hat{\theta}_T | \theta_T, \sigma^2_T/N_T) \]
+
+
+Since both the prior and the likelihood are Gaussian distributions, the posterior will also be a Gaussian distribution.
+
+The posterior distribution \( p(\theta_T | \hat{\theta}_T) \) is :
+
+\[ \theta_T | \hat{\theta}_T \sim \mathcal{N}(\mu_{\text{post}}, \sigma^2_{\text{post}}) \]
+
+**Posterior Mean:**
+
+\[ \mu_{\text{post}} = \sigma_{\text{post}}^2 \left( \frac{\hat{\theta}_S N_S}{\sigma^2_S} + \frac{\hat{\theta}_T N_T}{\sigma^2_T} \right) \]
+
+ **Posterior Variance:**
+
+\[ \sigma_{\text{post}}^2 = \left( \frac{N_S}{\sigma^2_S} + \frac{N_T}{\sigma^2_T} \right)^{-1} \]
+
+
+Thus, the posterior distribution \( p(\theta_T | \hat{\theta}_T) \) is:
+
+\[ \theta_T | \hat{\theta}_T \sim N\left( \left( \frac{N_S}{\sigma^2_S} + \frac{N_T}{\sigma^2_T} \right)^{-1} \left( \frac{\hat{\theta}_S N_S}{\sigma^2_S} + \frac{\hat{\theta}_T N_T}{\sigma^2_T} \right), \left( \frac{N_S}{\sigma^2_S} + \frac{N_T}{\sigma^2_T} \right)^{-1} \right) \]
+
+
+In the limit where \( \sigma_T \) goes to infinity:
+
+\[ \sigma_{\text{post}}^2 \rightarrow \frac{\sigma^2_S}{N_S} \]
+
+\[ \mu_{\text{post}} \rightarrow \hat{\theta}_S \]
+
+That is, the target study data are discarded because the likelihood becomes flat, and the posterior is the same as the prior.
+
+# Code example
+ 
+
+Pooling the data is equivalent to defining a Gaussian prior with mean and standard deviation corresponding to the treatment effect estimate and standard error on the treatment effect in the source study.
+ 
+
+  
+## Set working directory and load packages
+
+```{r setup, warning=F, message=F, include = FALSE}
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(RBExT)
+library(ggplot2)
+```
+
+## Load the case study configuration
+
+Load the simulation configuration and the Belimumab case study configuration from YAML files.
+
+```{r load_config}
+set.seed(42)
+case_study_config <- yaml::yaml.load_file(system.file("conf/case_studies/belimumab.yml", package = "RBExT"))
+```
+
+### Create data objects
+
+Create a source_data instance, where information about the source data is stored
+
+ 
+```{r}
+source_data <- ObservedSourceData$new(case_study_config)
+```
+
+Set the observed target data (in the paediatrics population)
+```{r}
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$target$treatment_effect, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+```
+
+### Create model
+  
+ 
+```{r}
+method <- "pooling"
+method_parameters <- list(
+  initial_prior = "noninformative" # This corresponds to the fact that the posterior for the adults data is derived from an uninformative prior (for consistency with other methods).
+)
+``` 
+Now, we define the model we want to use for inferring the treatment effect in the target study.  
+
+```{r}
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+
+This model calls RBesT in the backend, leveraging the fact that it is a special case of a Robust Mixture Prior.
+   
+### Inference
+
+
+```{r}
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+
+model$plot_pdfs(xmin = 0, xmax = 1, resolution = 100)
+```
+
+### Remarks
+
+Note that pooling and separate analysis are two extreme cases of a Conditional Power Prior, with \(\gamma = 1\) and \(\gamma = 0\) respectively.

@@ -1,0 +1,21 @@
+n_replicates: 10000
+ndrift: 0
+denominator_change_factor:
+    - 1
+sample_size_factors:
+    #- 1
+    #- 2
+    - 4
+    #- 6
+target_to_source_std_ratio_range:
+    - 1
+parallelization: TRUE
+case_studies:
+    - belimumab
+    - botox
+    - dapagliflozin
+    - mepolizumab
+    - aprepitant
+    - teriflunomide
+methods:
+    - NPP

@@ -1,0 +1,13 @@
+n_replicates: 10000
+ndrift: 0
+denominator_change_factor:
+        -1
+target_to_source_std_ratio_range:
+    - 1
+sample_size_factors:
+        - 4
+parallelization: True
+case_studies:
+    - aprepitant
+methods:
+    - EB_PP

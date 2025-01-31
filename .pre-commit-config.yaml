@@ -1,0 +1,146 @@
+# All available hooks: https://pre-commit.com/hooks.html
+# R specific hooks: https://github.com/lorenzwalthert/precommit
+repos:
+-   repo: https://github.com/lorenzwalthert/precommit
+    rev: v0.4.3.9001
+    hooks:
+    -   id: style-files
+        args: [--style_pkg=styler, --style_fun=tidyverse_style, --cache-root=styler-perm]
+        exclude: >
+          (?x)^(
+          tests/testthat/in/.*|
+          renv/.*
+          )$
+    -   id: roxygenize
+        # roxygen requires loading pkg -> add dependencies from DESCRIPTION
+        additional_dependencies:
+        -    dplyr
+        -    tidyr
+        -    readr
+        -    parallel
+        -    yaml
+        -    purrr
+        -    jsonlite
+        -    tidyverse
+        -    foreach
+        -    doParallel
+        -    progress
+        -    doSNOW
+        -    cmdstanr
+        -    extrafont
+        -    latex2exp
+        -    truncnorm
+        -    roxygen2
+        -    RBesT
+        -    R6
+        -    MASS
+        -    HDInterval
+        -    pwr
+        -    ggplot2
+        -    viridis
+        -    stringr
+        -    assertions
+        -    Bolstad2
+        -    gridExtra
+        -    binom
+        -    knitr
+        -    rlang
+        -    kableExtra
+        -    bayesplot
+        -    BSDA
+        -    scModels
+        -    extraDistr
+        -    pracma
+        -    futile.logger
+        -    ParallelLogger
+        -    Hmisc
+    # codemeta must be above use-tidy-description when both are used
+    # -   id: codemeta-description-updated
+    -   id: use-tidy-description
+    -   id: spell-check
+        exclude: >
+          (?x)^(
+          .*\.[rR]|
+          .*\.feather|
+          .*\.jpeg|
+          .*\.pdf|
+          .*\.png|
+          .*\.py|
+          .*\.RData|
+          .*\.rds|
+          .*\.Rds|
+          .*\.Rproj|
+          .*\.sh|
+          (.*/|)\.gitignore|
+          (.*/|)\.pre-commit-.*|
+          (.*/|)\.Rbuildignore|
+          (.*/|)\.Renviron|
+          (.*/|)\.Rprofile|
+          (.*/|)\.travis\.yml|
+          (.*/|)appveyor\.yml|
+          (.*/|)NAMESPACE|
+          (.*/|)renv/settings\.dcf|
+          (.*/|)renv\.lock|
+          (.*/|)WORDLIST|
+          \.github/workflows/.*|
+          data/.*|
+          inst/hooks/.*|
+          inst/pre-commit-.*|
+          inst/usethis-legacy-hook|
+          LICENSE|
+          renv/.*|
+          revdep/.*|
+          tests/testthat/in/.*|
+          )$
+    -   id: readme-rmd-rendered
+    -   id: parsable-R
+        exclude: >
+          (?x)^(
+          tests/testthat/in/.*|
+          )$
+    -   id: no-browser-statement
+        exclude: >
+          (?x)^(
+          tests/testthat/in/.*|
+          )$
+    -   id: no-debug-statement
+        exclude: >
+          (?x)^(
+          tests/testthat/in/.*|
+          )$
+    -   id: deps-in-desc
+        exclude: >
+          (?x)^(
+          inst/hooks/exported/pkgdown.R|
+          tests/testthat/in/.*|
+          inst/update-renv-prepare.R|
+          inst/update-ppm-url.R|
+          inst/update-dependency-graph-existing-packages\.R|
+          inst/update-existing-hook-dependencies\.R|
+          renv/activate.R|
+          vignettes/FAQ\.Rmd|
+          )$
+    -   id: pkgdown
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+    -   id: check-added-large-files
+    -   id: end-of-file-fixer
+        exclude: '\.Rd' # sometimes roxygen fails to generate EOF blank line.
+    -   id: file-contents-sorter
+        files: '^\.Rbuildignore$'
+-   repo: https://github.com/pre-commit-ci/pre-commit-ci-config
+    rev: v1.6.1
+    hooks:
+    # Only required when https://pre-commit.ci is used for config validation
+    -   id: check-pre-commit-ci-config
+-   repo: https://github.com/lorenzwalthert/gitignore-tidy
+    rev: 0.1.2
+    hooks:
+    -   id: tidy-gitignore
+
+default_stages: ["pre-commit"]
+
+ci:
+    skip: [pkgdown]
+    autoupdate_schedule: monthly

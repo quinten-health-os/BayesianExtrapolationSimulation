@@ -1,0 +1,83 @@
+Bootstrap: docker
+FROM: jstoropoli/cmdstanr
+##rocker/r-ver:4.4.1
+
+%labels
+  Author Tristan Fauvel
+  Version v1.0
+  Description Singularity container for a simulation study in R
+
+%help
+  Singularity image
+
+%setup
+	mkdir -p ${SINGULARITY_ROOTFS}/R
+
+%files
+      ./_pkgdown.yml /
+      ./CONTRIBUTING.md /
+      ./DESCRIPTION /
+      ./figures /
+      ./inst /
+      ./LICENSE /
+      ./logs /
+      ./man /
+      ./NAMESPACE /
+      ./NEWS.md /
+      ./R /
+      ./RBExT_0.0.2.tar.gz /
+      ./README.md /
+      ./results /
+      ./tables /
+      ./tests /
+
+%post
+    # Update package lists
+    apt-get update
+
+    # Install system dependencies for R packages
+    apt-get install -y \
+        libcurl4-openssl-dev \
+        libssl-dev \
+        libxml2-dev \
+        libgit2-dev \
+        libhdf5-dev \
+        zlib1g-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libbz2-dev \
+        liblzma-dev \
+        libpcre2-dev \
+        cmake \
+        git-core \
+        libglpk-dev \
+        libv8-dev \
+        libprotobuf-dev \
+        protobuf-compiler \
+        libfreetype6-dev \
+        libharfbuzz-dev
+
+    # Ensure R library paths are correctly set
+    export R_LIBS_USER=${SINGULARITY_ROOTFS}/usr/local/lib/R/site-library
+    mkdir -p $R_LIBS_USER
+
+# Remove any .csv and .sif files
+    rm -f ./results/*.csv
+    rm -f ./inst/singularity/*.sif
+
+## Install additional R packages globally
+    Rscript -e 'install.packages("devtools"); library(devtools); install.packages("./RBExT_0.0.1.tar.gz", repos = NULL, type = "source"); install.packages(c("dplyr", "tidyr", "readr", "zeallot", "tidyverse","foreach", "doParallel", "progress", "doSNOW", "extrafont", "latex2exp", "truncnorm", "RBesT", "HDInterval", "pwr", "ggplot2", "viridis", "webshot2", "assertions", "Bolstad2", "gridExtra", "binom", "kableExtra", "bayesplot", "BSDA", "scModels", "extraDistr", "pracma", "futile.logger", "ParallelLogger", "Hmisc")); update.packages(ask = FALSE);'
+
+%runscript
+	if [ $# -ne 1 ]; then
+		echo "No env provided, default is full"
+		STR=$(pwd)
+		./inst/utils/run_main.sh fast_cases_config
+	else
+		./inst/utils/run_main.sh $1
+	fi
+
+%test
+    # Run tests to ensure the container works
+    echo "Testing R version..."
+    R --version

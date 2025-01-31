@@ -1,0 +1,356 @@
+---
+title: "Simulation study logic - low level"
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: true
+vignette: >
+  %\VignetteIndexEntry{Simulation study logic - low level}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+
+## Introduction
+
+In the vignette "Simulation study logic - high level", we illustrated how to run the simulation study. We saw that many aspects are abstracted away, to improve ease of use. In this vignette, we dive deeper into some core aspects of the implementation. Methods implementation are described in separate vignettes. 
+ 
+
+```{r, setwd, include=FALSE}
+# Set working directory, import functions
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(RBExT)
+library(ggplot2)
+``` 
+
+## Load the Belimumab case study configuration
+
+Load the simulation configuration and the Belimumab case study configuration from YAML files.
+
+```{r load_config}
+set.seed(42)
+config_path <- system.file("conf/full/simulation_config.yml", package = "RBExT")
+simulation_config <- yaml::yaml.load_file(config_path)
+
+
+case_study <- "belimumab"
+config_path <- system.file("conf/case_studies/belimumab.yml", package = "RBExT")
+case_study_config <- yaml::yaml.load_file(config_path)
+```
+The case study configuration file contains all necessary information about the case study, this includes: treatment effect distribution, endpoint type, side of the null hypothesis, sample sizes, treatment effect estimate in the source study, etc.
+
+The simulation configuration specifies parameters such as the number of simulation replicates, the number of drift values considered, the critical value for the Bayesian decision criterion, the environment, the case studies to iterate on and the methods considered.
+
+Any modification to the simulation settings should be made through these configuration files. 
+
+## Specific scenario
+
+For a given case study, we will loop over different methods. Here, we choose the RMP for illustration. 
+For the considered method, we also loop over target study sample size, drift, control drift, and method parameters. 
+
+Here, we choose the following :
+
+```{r}
+method <- "RMP"
+method_parameters <- list(
+  initial_prior = "noninformative", # This corresponds to the fact that the posterior for the adults data is derived from an uninformative prior (for consistency with other methods). May be removed in future releases.
+  prior_weight = 0.5, # weight on the informative component of the mixture
+  empirical_bayes = FALSE # Corresponds to whether some parameters of the prior are based on observed data.
+)
+
+target_sample_size_per_arm <- 91
+drift <- 0.4
+```
+
+## Create data objects
+
+If we wanted to load the original source study data without any modification, we would use : 
+```{r}
+original_source_data <- ObservedSourceData$new(case_study_config)
+```
+
+Specify the denominator in the source data summary measure: 
+```{r}
+odds_control <- original_source_data$control_rate / (1 - original_source_data$control_rate)
+denominator_change_factor <- 1.5
+source_denominator <- denominator_change_factor * odds_control
+
+source_data <- SourceData$new(case_study_config, source_denominator)
+print(source_data)
+```
+ 
+
+## Data generation 
+
+Create an instance of the BinaryTargetData class, which will allow us to sample target study data. Note that this target_data depends on the specific parameters chosen for the scenario (in particular, the drift and target sample size). 
+
+The `TargetData` class implements a method to generate treatment effect summary measures. This data generation method depends on the endpoint and whether we use sampling approximation or not. 
+Let us illustrate this in the Belimumab example. 
+ 
+
+```{r}
+summary_measure_likelihood <- case_study_config$summary_measure_likelihood
+endpoint <- case_study_config$endpoint
+
+print(summary_measure_likelihood)
+print(endpoint)
+```
+Here, the endpoint is binary, but we assume that the treatment effect (which is a log(OR)), is normally distributed. 
+We can sample the treatment effect summary measure for each replicate by sampling a Gaussian, which is an approximation to the true data-generating process. The use of this approximation is determined by specifying `sampling_approximation = TRUE` in the case study configuration file. By setting `sampling_approximation = FALSE`, we sampled data according to the true data-generating process. This is recommended for small target study sample sizes (typically less than 40 per arm). 
+
+First, let's instantiate the target data object (and then we will see how to sample synthetic data):
+```{r} 
+target_data <- TargetDataFactory$new()
+
+target_data <- target_data$create(source_data = source_data, case_study_config = case_study_config, target_sample_size_per_arm = target_sample_size_per_arm, treatment_drift = drift, summary_measure_likelihood = source_data$summary_measure_likelihood)
+```
+
+### Applying drift
+
+When instantiating the target_data object, we first need to compute the response rates in the control and treatment arms based on treatment and control drifts. This is, in turn, used to determine the true treatment effect, and the sampling standard deviation.
+
+
+Here, we reproduce the code that is contained in the BinaryData class definition :
+```{r}
+self <- target_data
+```
+
+The following is used for normally distributed treatment effects :
+
+```{r}      
+# We compute the rate in each arm, based on the drift (defined on the log scale)
+self$control_rate <- source_data$control_rate
+self$treatment_rate <- rate_from_drift_logOR(drift, source_data$treatment_rate)
+
+# The target treatment effect corresponds to the source treatment effect+ the drift
+self$treatment_effect <- self$drift + source_data$treatment_effect_estimate
+
+# We compute the sampling standard deviation for the summary measure:
+self$standard_deviation <- standard_error_log_odds_ratio(
+  self$sample_size_control * (1 - self$control_rate),
+  self$sample_size_treatment * (1 - self$treatment_rate),
+  self$sample_size_control * self$control_rate,
+  self$sample_size_treatment * self$treatment_rate
+) * sqrt(self$sample_size_per_arm)
+
+print(self$treatment_effect)
+print(self$standard_deviation)
+``` 
+
+### Approximate sampling
+ 
+Now, let's take a look at the `generate()` method of the `BinaryTargetData` class. In case when then normal sampling approximation is used, this function return n_replicates samples.
+`self$treatment_effect` is the mean and `self$standard_deviation` is the standard deviation of the Gaussian we will sample summary data from. 
+
+```{r}
+n_replicates <- scenarios_config$n_replicates
+samples <- sample_aggregate_normal_data(self$treatment_effect, self$standard_deviation^2, n_replicates, self$sample_size_per_arm)
+
+samples <- data.frame(
+  treatment_effect_estimate = samples$treatment_effect_estimate,
+  treatment_effect_standard_error = samples$treatment_effect_standard_error,
+  sample_size_per_arm = samples$sample_size_per_arm
+)
+```
+Note that the whole implementation always assumes that the number of participants in each arm of the target study is the same. 
+
+What `sample_aggregate_normal_data` does is that is returns a sample mean and a sample variance for normally distributed data (we proceed this way because the sample mean and sample variance are not independent): 
+ 
+ 
+
+```{r}
+read_function_code(sample_aggregate_normal_data)
+```
+
+So, the "samples" correspond, for each replicate, to the corresponding sample mean and standard error on the mean.
+
+### Exact sampling
+
+"Exact sampling", in this context, means that we rely on the true data-generating process. 
+```{r}
+log_OR_samples <- sample_log_odds_ratios(self$sample_size_control, self$sample_size_treatment, self$treatment_rate, self$control_rate, n_replicates)
+
+samples <- data.frame(treatment_effect_estimate = log_OR_samples$log_odds_ratio, treatment_effect_standard_error = log_OR_samples$std_err_log_odds_ratio, sample_size_per_arm = self$sample_size_per_arm)
+```
+ 
+### Estimation of OCs based on the samples
+
+For a given target treatment effect, we generate some simulated summary data :
+
+Note that, here, we sample aggregate data from a normal distribution (this is specified in `case_study_config`):
+```{r} 
+print(case_study_config$sampling_approximation)
+```
+
+```{r} 
+target_data_samples <- target_data$generate(n_replicates)
+```
+
+We create the model, loop through the replicates, perform inference, and compute the test decision and important characteristics of the posterior distribution of the target treatment effect (mean, median, credible interval) as well as, if applicable, the posterior value of borrowing parameters (such as the posterior weight in the RMP).
+
+```{r}
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+
+self <- model
+
+test_decisions <- numeric(n_replicates)
+posterior_means <- numeric(n_replicates)
+posterior_medians <- numeric(n_replicates)
+credible_intervals <- matrix(numeric(2 * n_replicates), nrow = n_replicates)
+prior_proba_no_benefit <- numeric(n_replicates)
+
+posterior_parameters <- NULL
+
+target_data_samples <- target_data$generate(n_replicates)
+
+theta_0 <- case_study_config$theta_0
+critical_value <- simulation_config$critical_value
+null_space <- case_study_config$null_space
+confidence_level <- simulation_config$confidence_level
+
+for (r in seq_along(1:nrow(target_data_samples))) {
+  target_data$sample <- target_data_samples[r, ]
+
+  self$inference(target_data = target_data)
+
+  test_decisions[r] <- self$test_decision(critical_value = critical_value, theta_0 = theta_0, null_space = null_space, confidence_level = 0.95)
+  posterior_means[r] <- self$post_mean
+  posterior_medians[r] <- self$posterior_median()
+
+
+  credible_intervals[r, ] <- self$credible_interval(level = 0.95)
+
+  if (is.null(posterior_parameters) && !is.null(self$posterior_parameters)) {
+    posterior_parameters <- data.frame(self$posterior_parameters)
+  } else if (!is.null(self$posterior_parameters)) {
+    posterior_parameters <- rbind(posterior_parameters, data.frame(self$posterior_parameters))
+  }
+}
+```
+How inference is performed is detailed, for each method, in a separate vignette.
+
+
+The null hypothesis is $H_0: \theta_T \leq \theta_0$. A decision is made based on the posterior probability of a positive treatment effect. The null hypothesis is rejected if  : 
+$$
+ Pr\left(\theta > \theta_0 \mid \mathbf{D}_T, \mathbf{D}_S\right) \geq \phi 
+$$
+
+
+Here is the detail of the test_decision function:
+
+```{r}
+read_function_code(self$test_decision)
+```
+
+In most cases, we cannot determine the posterior median analytically, in which case we use the following: 
+
+```{r}
+read_function_code(self$posterior_median)
+```
+  
+We apply a similar logic for determining the credible interval: 
+
+```{r}
+read_function_code(self$credible_interval)
+```
+
+Posterior moments, by contrast, are determined at the inference stage (which is method-specific).
+
+
+As explained above, we repeat these computations for each replicate. This is done through the "simulation_for_given_treatment_effect" function: 
+```{r}
+confidence_level <- 0.95
+results <- self$simulation_for_given_treatment_effect(
+  target_data,
+  n_replicates,
+  critical_value,
+  theta_0,
+  confidence_level = confidence_level,
+  null_space = null_space,
+  verbose = 0,
+  method = method, 
+  case_study = case_study
+)
+
+print(data.frame(results))
+```
+Now that we have the results of inference and test decisions for each replicate, we can compute the operating characteristics:
+
+```{r}
+test_decisions <- results$test_decisions
+posterior_means <- results$posterior_means
+posterior_medians <- results$posterior_medians
+credible_intervals <- results$credible_intervals
+posterior_parameters <- results$posterior_parameters
+
+# Determine whether the true value of the target treatment effect lies within the credible interval (to compute the coverage)
+target_treatment_effect <- target_data$treatment_effect
+
+estimate_in_CrI <- (
+  credible_intervals[, 1] <= target_treatment_effect &
+    target_treatment_effect <= credible_intervals[, 2]
+)
+
+coverage <- mean(estimate_in_CrI)
+
+conf_int_coverage <- binom.test(sum(estimate_in_CrI), length(estimate_in_CrI), conf.level = confidence_level)$conf.int
+
+errors <- (posterior_means - target_treatment_effect)
+squared_errors <- errors ^ 2
+mse <- mean(squared_errors)
+conf_int_mse <- Hmisc::smean.cl.boot(squared_errors, conf.int = confidence_level)[2:3]
+
+bias <- mean(errors)
+conf_int_bias <- Hmisc::smean.cl.boot(errors, conf.int = confidence_level)[2:3]
+
+post_mean <- mean(posterior_means)
+conf_int_posterior_mean <- Hmisc::smean.cl.boot(posterior_means, conf.int = confidence_level)[2:3]
+
+post_median <- mean(posterior_medians)
+conf_int_posterior_median <- Hmisc::smean.cl.boot(posterior_medians, conf.int = confidence_level)[2:3]
+
+posterior_params <- list()
+if (!is.null(posterior_parameters)) {
+  for (parameter in colnames(posterior_parameters)) {
+    posterior_params[[parameter]] <- mean(posterior_parameters[[parameter]])
+
+    ci <- Hmisc::smean.cl.boot(posterior_parameters[[parameter]], conf.int = confidence_level)
+    posterior_params[[paste0("conf_int_lower_", parameter)]] <- ci[2]
+    posterior_params[[paste0("conf_int_upper_", parameter)]] <- ci[3]
+  }
+}
+
+half_widths <- (credible_intervals[, 2] - credible_intervals[, 1]) / 2
+precision <- mean(half_widths)
+conf_int_precision <-  Hmisc::smean.cl.boot(half_widths, conf.int = confidence_level)[2:3]
+
+credible_interval <- colMeans(credible_intervals)
+
+proba_success <- mean(test_decisions)
+conf_int_proba_success <- binom.test(sum(test_decisions), length(test_decisions), conf.level = confidence_level)$conf.int
+mcse_proba_success <- sqrt(proba_success * (1 - proba_success) / n_replicates)
+
+results$ess_elir <- na.omit(results$ess_elir)
+ess_elir  <- mean(results$ess_elir)
+conf_int_ess_elir <- Hmisc::smean.cl.boot(ess_elir, conf.int = confidence_level)[2:3]
+ 
+```
+
+```{r}
+sessionInfo()
+```
+ 

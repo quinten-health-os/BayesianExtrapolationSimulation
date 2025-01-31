@@ -1,0 +1,26 @@
+name: Mepolizumab
+control: Placebo
+summary_measure_likelihood: normal  
+theta_0: 0
+endpoint: recurrent_event
+null_space: right
+sampling_approximation: FALSE # Whether to sample the summary measure according to the approximation used in the analysis or not (that is, sample according to the true data generating process)
+target:
+    control: 9  # See page 95 of the EPAR
+    treatment: 16 # IV and SC, See page 95 of the EPAR
+    total: 25
+    treatment_effect: -0.395 # 0.67 on the raw scale, this is a log(RR)
+    standard_error: 0.703 # based on Best et al 2021
+    # confidence_interval: [0.17, 2.68]
+
+source: # Ortega et al, 2014
+    control: 182 # 191 - 9 = 182 
+    treatment: 369 # 385 - 16 = 369
+    total: 551 # In Ortega et al, 2015, there are 576 patients in total, to which we subtract 25 adolescents
+    treatment_effect: -0.6931471805599453 # 0.50 on the raw scale, this is a log(RR)
+    standard_error: 0.130384048104053 #  sqrt(0.017), based on Best et al 2021
+    # confidence_interval: [0.39, 0.64]
+    # For the rate in the control group, we use the data from Ortega et al (which include both adults and paediatric patients), assuming that the placebo rate is the same between the adults and the adolescents (or that the effect of the paediatric subgroup in the overall rate computation is negligible)
+    control_rate: 1.74
+    # The treatment rate is chosen so as to be consistent with the control rate
+    treatment_rate: 0.87 # = 0.50*1.74

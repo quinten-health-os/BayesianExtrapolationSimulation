@@ -1,0 +1,286 @@
+---
+title: "Implementation of variants of the Empirical Bayes Power Prior for normally distributed treatment effect summary measure"
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: true
+vignette: >
+  %\VignetteIndexEntry{Empirical Bayes Power Prior}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+ 
+## Introduction
+
+The aim of this document is to illustrate the  implementation of variants of the Empirical Bayes Power Prior in the case where the treatment effect follows a normal distribution. 
+ 
+## Set working directory, import functions
+
+```{r, setwd, include=FALSE}
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+library(RBExT)
+library(ggplot2)
+```
+
+## Load the Belimumab case study configuration
+
+Load the simulation configuration and the Belimumab case study configuration from YAML files.
+```{r load_config}
+set.seed(42)
+case_study_config <- yaml::yaml.load_file(system.file("conf/case_studies/belimumab.yml", package = "RBExT"))
+```
+
+### Create data objects
+
+Create a source_data instance, where information about the source data is stored
+
+ 
+```{r}
+source_data <- ObservedSourceData$new(case_study_config)
+```
+
+Set the observed target data (in the paediatrics population)
+```{r}
+drift <- 0
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+```
+
+## Approach by [Gravestock et al (2017)](https://onlinelibrary.wiley.com/doi/10.1002/pst.1814)
+
+Now, we define the model we want to use for inferring the treatment effect in the target study.  
+ 
+
+```{r}
+method <- "EB_PP"
+# here, we choose the parameters so that the prior on the power parameter is Beta(1,1)
+method_parameters <- list(
+  initial_prior = "noninformative"
+)
+
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+
+```{r}
+model$plot_power_parameter_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -1.5, max_drift = 1.5, resolution = 100)
+```
+
+```{r}
+drift <- 0
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+```
+
+```{r}
+plt <- model$plot_pdfs(xmin = 0, xmax = 1, resolution = 100)
+
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted")) +
+  theme_minimal()
+
+print(plt)
+```
+ 
+With more drift : 
+
+```{r}
+drift <- -2
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = 0 + drift, xmax = case_study_config$source$treatment_effect, resolution = 100)
+
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+
+print(plt)
+```
+This illustrates the lack of adaptiveness of the Empirical Bayes Power Prior as proposed by Gravestock et al, as a large discrepancy between the prior and the likelihood still results in a strong weight of source data.
+
+ 
+
+## p-value based Power Prior
+
+In a generalization of the test-then-pool approach, [Liu et al (2018)](https://onlinelibrary.wiley.com/doi/10.1002/pst.1836) proposed a method for selecting the power parameter $\gamma$ in the conditional power prior based on the p-value of an equivalence test between the source and target data. The equation used to determine $\gamma$ is as follows:
+\(\gamma = \exp\left[\frac{k}{1-p}\ln(1-p) \right]\),
+
+where $k$ is a shape parameter that must be specified. This function was chosen so that more source data is borrowed when the p-value is close to 0 (i.e., the non-equivalence null hypothesis is strongly rejected). Larger values of $k$ result in steeper curves (faster decrease from 0 to 1), that is more discounting will be applied to the source data for a given p-value. This method can be viewed as an extension of the test-then-pool approach, with the power parameter smoothly adjusting the amount of borrowing from no borrowing to pooling. 
+
+```{r}
+method <- "p_value_based_PP"
+# here, we choose the parameters so that the prior on the power parameter is Beta(1,1)
+method_parameters <- list(
+  initial_prior = "noninformative",
+  shape_parameter = 0.5,
+  equivalence_margin = 0.1
+)
+
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+  
+
+
+```{r}
+model$plot_power_parameter_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -0.15, max_drift = 0.15, resolution = 100)
+```
+
+```{r}
+drift <- 0
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+```
+Posterior value of the power prior parameter:
+
+```{r}
+model$posterior_parameters
+```
+
+```{r}
+model$plot_pdfs(xmin = -1, xmax = 1, resolution = 100, target_data)
+```
+
+With more drift : 
+
+```{r}
+drift <- -2
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = 0 + drift, xmax = case_study_config$source$treatment_effect, resolution = 100)
+
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+
+print(plt)
+```
+
+## PDCCPP
+
+Now, we define the model we want to use for inferring the treatment effect in the target study.  
+ 
+
+```{r}
+method <- "PDCCPP"
+# here, we choose the parameters so that the prior on the power parameter is Beta(1,1)
+method_parameters <- list(
+  initial_prior = "noninformative",
+  desired_tie = 0.065,
+  significance_level = 0.05,
+  tolerance = 0.0001,
+  n_iter = 1e6
+)
+
+model <- Model$new()
+
+model <- model$create(
+  case_study_config = case_study_config,
+  method = method,
+  method_parameters = method_parameters,
+  source_data = source_data
+)
+```
+
+```{r}
+model$plot_power_parameter_vs_drift(source_treatment_effect_estimate = source_data$treatment_effect_estimate, target_data = target_data, min_drift = -0.5, max_drift = 0.5, resolution = 100)
+```
+
+```{r}
+drift <- 0
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+
+
+# Perform Bayesian inference based on observed target data.
+model$inference(target_data = target_data)
+```
+```{r}
+model$plot_pdfs(xmin = 0, xmax = 1, resolution = 100)
+```
+
+With more drift : 
+
+```{r}
+drift <- -2
+target_data <- ObservedTargetData$new(treatment_effect_estimate = case_study_config$source$treatment_effect + drift, treatment_effect_standard_error = case_study_config$target$standard_error, target_sample_size_per_arm = as.integer(case_study_config$target$total / 2), summary_measure_likelihood = case_study_config$summary_measure_likelihood)
+model$inference(target_data = target_data)
+
+plt <- model$plot_pdfs(xmin = 0 + drift, xmax = case_study_config$source$treatment_effect, resolution = 100)
+
+vline_data <- data.frame(
+  effect = c("Source Treatment Effect", "Target Treatment Effect"),
+  xintercept = c(source_data$treatment_effect_estimate, target_data$sample$treatment_effect_estimate)
+)
+
+# Plot with vertical lines and legend
+plt <- plt +
+  geom_vline(aes(xintercept = xintercept, color = effect, linetype = effect),
+    data = vline_data, size = 1
+  )
+
+# Customize the legend (optional)
+plt + scale_color_manual(name = "", values = c("Source Treatment Effect" = "blue", "Target Treatment Effect" = "red")) +
+  scale_linetype_manual(name = "", values = c("Source Treatment Effect" = "dashed", "Target Treatment Effect" = "dotted"))
+
+print(plt)
+```

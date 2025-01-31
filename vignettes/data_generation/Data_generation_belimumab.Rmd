@@ -1,0 +1,147 @@
+---
+title: "Data Generation : Belimumab case study (binary endpoint)" 
+author: "Tristan Fauvel, Quinten Health"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: true
+vignette: >
+  %\VignetteIndexEntry{Data Generation : Belimumab case study}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteDepends{RBExT, ggplot2}
+---
+
+```{r setup, warning=F, message=F, include=FALSE}
+root <- dirname(dirname(getwd()))
+knitr::opts_knit$set(root.dir = root, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(RBExT)
+library(ggplot2)
+```
+ 
+
+
+# Belimumab case study 
+```{r}
+set.seed(42)
+case_study_config <- yaml::yaml.load_file(system.file("conf/case_studies/belimumab.yml", package = "RBExT"))
+format_case_study_config(case_study_config)
+```
+
+# Initializing a BinaryTargetData object with a normal treatment effect summary measure distribution
+```{r}
+source_data <- SourceData$new(case_study_config)
+
+drift <- 0.4
+target_sample_size_per_arm <- 100
+```
+ 
+ 
+We start by computing the rate in each arm, based on the drift in each arm (defined on the log scale).
+By default, the drift in the control arm is 0.
+
+```{r}
+read_function_code(rate_from_drift_logOR)
+```
+
+```{r}
+control_drift <- 0
+treatment_drift <- drift + control_drift
+
+target_data$control_rate <- rate_from_drift_logOR(control_drift, source_data$control_rate)
+target_data$treatment_rate <- rate_from_drift_logOR(treatment_drift, source_data$treatment_rate)
+```
+## Computing the mean and standard deviation of the logOR distribution
+
+
+This allows us to compute the sampling standard deviation of the log OR:
+
+```{r}
+read_function_code(standard_error_log_odds_ratio)
+```
+
+Computing the mean the logOR distribution:
+
+```{r}
+target_data$treatment_effect <- target_data$drift + source_data$treatment_effect_estimate
+```
+
+# Aggregate data generation
+
+## Generation of aggregate data without sampling approximation
+
+### Usage
+
+```{r}
+case_study_config$sampling_approximation <- FALSE
+target_data <- TargetDataFactory$new()
+target_data <- target_data$create(source_data = source_data, case_study_config = case_study_config, target_sample_size_per_arm = target_sample_size_per_arm, treatment_drift = drift, summary_measure_likelihood = source_data$summary_measure_likelihood)
+```
+
+```{r}
+n_replicates <- 10000
+data <- target_data$generate(n_replicates = n_replicates)
+print(data[1:10,])
+```
+```{r}
+target_data$plot_sample(data)
+```
+
+### Implementation details
+
+```{r}
+read_function_code(compute_ORs)
+```
+
+```{r}
+read_function_code(sample_log_odds_ratios)
+``` 
+```{r}
+log_OR_samples <- sample_log_odds_ratios(
+  target_data$sample_size_control,
+  target_data$sample_size_treatment,
+  target_data$treatment_rate,
+  target_data$control_rate,
+  n_replicates
+)
+
+samples <- data.frame(
+  treatment_effect_estimate = log_OR_samples$log_odds_ratio,
+  treatment_effect_standard_error = log_OR_samples$std_err_log_odds_ratio,
+  sample_size_per_arm = target_data$sample_size_per_arm
+)
+```
+
+## Generation of aggregate data using a Gaussian approximation.
+
+### Usage
+```{r}
+case_study_config$sampling_approximation <- TRUE
+
+target_data <- TargetDataFactory$new()
+target_data <- target_data$create(source_data = source_data, case_study_config = case_study_config, target_sample_size_per_arm = target_sample_size_per_arm, treatment_drift = drift, summary_measure_likelihood = source_data$summary_measure_likelihood)
+```
+
+```{r}
+n_replicates <- 10000
+data <- target_data$generate(n_replicates = n_replicates)
+print(data[1:10,])
+```
+```{r}
+target_data$plot_sample(data)
+```
+
+Notice how the sampling approximation leads to a similar distribution of the treament effect estimate, but to a very different distribution of the treatment effect standard error.
+
+
+### Implementation details
+
+```{r}
+read_function_code(sample_aggregate_normal_data)
+```
+
+See [Data_generation_botox](../doc/Data_generation_botox.html) for details on aggregate normal data generation.
